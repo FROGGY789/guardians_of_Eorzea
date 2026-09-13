@@ -12,10 +12,9 @@ export function Login() {
   const [mode, setMode] = useState<Mode>('login');
   const [latest, setLatest] = useState<GalleryPost | null>(null);
 
-  const [email, setEmail] = useState('');
+  const [nickname, setNickname] = useState('');
   const [password, setPassword] = useState('');
-  const [characterName, setCharacterName] = useState('');
-  const [job, setJob] = useState('');
+  const [secretCode, setSecretCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -31,11 +30,17 @@ export function Login() {
     setBusy(true);
     try {
       if (mode === 'login') {
-        await signIn(email.trim(), password);
+        if (!nickname.trim()) throw new Error('닉네임을 입력해주세요.');
+        await signIn(nickname.trim(), password);
       } else {
-        if (!characterName.trim()) throw new Error('캐릭터 이름을 입력해주세요.');
-        await signUp({ email: email.trim(), password, characterName: characterName.trim(), job: job.trim() });
+        if (!nickname.trim()) throw new Error('캐릭터 닉네임을 입력해주세요.');
+        if (password.length < 6) throw new Error('비밀번호는 6자 이상이어야 합니다.');
+        if (!secretCode.trim()) throw new Error('부대 시크릿코드를 입력해주세요.');
+        await signUp({ nickname: nickname.trim(), password, secretCode: secretCode.trim() });
         setNotice('가입 신청이 접수되었습니다. 부대장의 승인 후 입장할 수 있어요.');
+        setMode('login');
+        setPassword('');
+        setSecretCode('');
       }
     } catch (err) {
       setError(translate((err as Error).message));
@@ -207,36 +212,14 @@ export function Login() {
           {mode === 'login' ? 'ENTER THE TIDE' : 'JOIN THE CREW'}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {mode === 'signup' && (
-            <>
-              <div style={glassField}>
-                <div style={glassLabel}>캐릭터명</div>
-                <input
-                  style={glassInput}
-                  placeholder="캐릭터 이름"
-                  value={characterName}
-                  onChange={(e) => setCharacterName(e.target.value)}
-                />
-              </div>
-              <div style={glassField}>
-                <div style={glassLabel}>직업</div>
-                <input
-                  style={glassInput}
-                  placeholder="예: 백마도사 (선택)"
-                  value={job}
-                  onChange={(e) => setJob(e.target.value)}
-                />
-              </div>
-            </>
-          )}
           <div style={glassField}>
-            <div style={glassLabel}>이메일</div>
+            <div style={glassLabel}>닉네임</div>
             <input
               style={glassInput}
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="캐릭터 닉네임"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              autoComplete="username"
               required
             />
           </div>
@@ -245,12 +228,25 @@ export function Login() {
             <input
               style={glassInput}
               type="password"
-              placeholder={mode === 'signup' ? '6자 이상' : '비밀번호'}
+              placeholder={mode === 'signup' ? '비밀번호 (6자 이상)' : '비밀번호'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               required
             />
           </div>
+          {mode === 'signup' && (
+            <div style={glassField}>
+              <div style={glassLabel}>시크릿코드</div>
+              <input
+                style={glassInput}
+                placeholder="부대 시크릿코드"
+                value={secretCode}
+                onChange={(e) => setSecretCode(e.target.value)}
+                required
+              />
+            </div>
+          )}
           <button
             type="submit"
             disabled={busy}
@@ -331,10 +327,12 @@ function formatSub(p: GalleryPost): string {
 
 function translate(msg: string): string {
   const m = msg.toLowerCase();
-  if (m.includes('invalid login')) return '이메일 또는 비밀번호가 올바르지 않습니다.';
-  if (m.includes('already registered') || m.includes('already been registered')) return '이미 가입된 이메일입니다.';
+  if (msg === 'BAD_SECRET_CODE') return '부대 시크릿코드가 올바르지 않습니다. 부대장에게 문의하세요.';
+  if (msg === 'NICKNAME_TAKEN') return '이미 사용 중인 닉네임입니다.';
+  if (m.includes('invalid login')) return '닉네임 또는 비밀번호가 올바르지 않습니다.';
+  if (m.includes('already registered') || m.includes('already been registered')) return '이미 가입된 닉네임입니다.';
   if (m.includes('password should be')) return '비밀번호는 6자 이상이어야 합니다.';
-  if (m.includes('unable to validate email') || m.includes('invalid email')) return '이메일 형식을 확인해주세요.';
-  if (m.includes('email not confirmed')) return '이메일 인증이 필요합니다. 메일함을 확인해주세요.';
+  if (m.includes('email not confirmed')) return '아직 가입 처리 중입니다. 잠시 후 다시 시도하거나 부대장에게 문의하세요.';
+  if (m.includes('database error')) return '가입에 실패했습니다. 시크릿코드와 닉네임을 확인해주세요.';
   return msg;
 }

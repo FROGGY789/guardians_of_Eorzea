@@ -25,6 +25,21 @@ create table if not exists public.profiles (
   created_at    timestamptz not null default now()
 );
 
+-- 닉네임 중복 방지 (대소문자 무시)
+create unique index if not exists uq_profiles_nickname on public.profiles (lower(character_name));
+
+-- 부대 설정 (가입용 시크릿코드 등). 항상 id = 1 인 한 줄만 사용합니다.
+create table if not exists public.fc_config (
+  id          int primary key default 1,
+  secret_code text not null,
+  updated_at  timestamptz not null default now(),
+  constraint fc_config_singleton check (id = 1)
+);
+
+-- 기본 시크릿코드 (⚠ 가입 후 '부대 관리' 탭에서 꼭 바꾸세요!)
+insert into public.fc_config (id, secret_code) values (1, 'LUX-2026')
+on conflict (id) do nothing;
+
 -- 갤러리 게시글 (대표 사진 = cover_url, 여러 장의 사진을 담는 "포스트")
 create table if not exists public.gallery_posts (
   id         uuid primary key default gen_random_uuid(),
@@ -156,18 +171,45 @@ $$;
 --  Triggers
 -- ---------------------------------------------------------------------------
 
--- 가입 시 프로필 자동 생성. 첫 번째로 가입하는 사람은 자동으로 부대장(admin)이 됩니다.
+-- 가입 전 확인용 RPC: 시크릿코드가 맞는지 + 닉네임이 비어있는지 검사.
+-- (익명 사용자도 호출 가능 — 클라이언트에서 친절한 오류 메시지를 주기 위함)
+create or replace function public.precheck_signup(p_nickname text, p_code text)
+returns text language plpgsql security definer set search_path = public as $$
+declare expected text;
+begin
+  select secret_code into expected from public.fc_config where id = 1;
+  if expected is null or p_code is distinct from expected then
+    return 'bad_code';
+  end if;
+  if exists (select 1 from public.profiles where lower(character_name) = lower(trim(p_nickname))) then
+    return 'nick_taken';
+  end if;
+  return 'ok';
+end;
+$$;
+grant execute on function public.precheck_signup(text, text) to anon, authenticated;
+
+-- 가입 시 프로필 자동 생성.
+--   · 시크릿코드가 틀리면 가입 자체가 거부됩니다(트리거에서 예외 발생 → 롤백).
+--   · 첫 번째로 가입하는 사람은 자동으로 부대장(admin)이 됩니다.
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
   existing_count int;
+  expected_code  text;
+  provided_code  text;
 begin
+  select secret_code into expected_code from public.fc_config where id = 1;
+  provided_code := new.raw_user_meta_data->>'secret_code';
+  if expected_code is not null and coalesce(provided_code, '') <> expected_code then
+    raise exception 'INVALID_SECRET_CODE';
+  end if;
+
   select count(*) into existing_count from public.profiles;
-  insert into public.profiles (id, character_name, job, role, can_write, joined_at)
+  insert into public.profiles (id, character_name, role, can_write, joined_at)
   values (
     new.id,
     coalesce(nullif(new.raw_user_meta_data->>'character_name',''), split_part(new.email, '@', 1)),
-    nullif(new.raw_user_meta_data->>'job',''),
     case when existing_count = 0 then 'admin'  else 'pending' end,
     case when existing_count = 0 then true     else false     end,
     now()
@@ -230,6 +272,7 @@ create trigger trg_photo_count
 -- ---------------------------------------------------------------------------
 
 alter table public.profiles        enable row level security;
+alter table public.fc_config       enable row level security;
 alter table public.gallery_posts   enable row level security;
 alter table public.gallery_photos  enable row level security;
 alter table public.notices         enable row level security;
@@ -258,6 +301,17 @@ create policy profiles_update on public.profiles
 drop policy if exists profiles_delete on public.profiles;
 create policy profiles_delete on public.profiles
   for delete to authenticated using (public.is_admin(auth.uid()));
+
+-- fc_config (시크릿코드는 부대장만 조회·변경. 가입 검증은 SECURITY DEFINER 함수가 처리) --
+drop policy if exists fc_config_select on public.fc_config;
+create policy fc_config_select on public.fc_config
+  for select to authenticated using (public.is_admin(auth.uid()));
+
+drop policy if exists fc_config_update on public.fc_config;
+create policy fc_config_update on public.fc_config
+  for update to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
 
 -- 일반 콘텐츠 테이블용 정책 생성 매크로 (읽기: 승인된 부대원 / 쓰기: 권한 보유자 or 관리자)
 do $$

@@ -10,14 +10,32 @@ export function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
 
+  const [secretCode, setSecretCode] = useState('');
+  const [codeInput, setCodeInput] = useState('');
+  const [codeSaving, setCodeSaving] = useState(false);
+  const [codeSaved, setCodeSaved] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: true });
     if (error) console.error(error);
     setAll((data as Profile[]) ?? []);
+    const { data: cfg } = await supabase.from('fc_config').select('secret_code').eq('id', 1).maybeSingle();
+    if (cfg?.secret_code) { setSecretCode(cfg.secret_code); setCodeInput(cfg.secret_code); }
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  async function saveSecretCode() {
+    if (!codeInput.trim()) return alert('시크릿코드를 입력해주세요.');
+    setCodeSaving(true);
+    const { error } = await supabase.from('fc_config').update({ secret_code: codeInput.trim(), updated_at: new Date().toISOString() }).eq('id', 1);
+    setCodeSaving(false);
+    if (error) return alert('변경 실패: ' + error.message);
+    setSecretCode(codeInput.trim());
+    setCodeSaved(true);
+    setTimeout(() => setCodeSaved(false), 2500);
+  }
 
   const pending = all.filter((p) => p.role === 'pending');
   const active = all.filter((p) => p.role !== 'pending');
@@ -61,6 +79,26 @@ export function AdminPage() {
         title="부대 관리"
         desc="가입 승인과 부대원 권한을 관리합니다. 부대장(관리자)만 볼 수 있는 화면입니다."
       />
+
+      {/* Secret code */}
+      <div style={{ marginTop: 36, padding: '20px 22px', background: 'var(--paper2)', border: '1px solid var(--line)', borderRadius: 4 }}>
+        <div style={{ fontFamily: SERIF, fontSize: 22, color: 'var(--ink)' }}>부대 가입 시크릿코드</div>
+        <div style={{ fontFamily: KR, fontWeight: 300, fontSize: 13, color: 'var(--muted)', marginTop: 6, lineHeight: 1.7 }}>
+          새 부대원은 가입 시 이 코드를 입력해야 합니다. 부대원들에게만 알려주세요.
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            style={{ ...inputStyle, width: 220, letterSpacing: '.1em', fontFamily: 'ui-monospace, monospace' }}
+            value={codeInput}
+            onChange={(e) => setCodeInput(e.target.value)}
+            placeholder="예: LUX-2026"
+          />
+          <Button onClick={saveSecretCode} disabled={codeSaving || codeInput.trim() === secretCode}>
+            {codeSaving ? '저장 중…' : '코드 변경'}
+          </Button>
+          {codeSaved && <span style={{ fontFamily: SANS, fontSize: 12.5, color: 'var(--accent)' }}>✓ 변경되었습니다</span>}
+        </div>
+      </div>
 
       {/* Pending approvals */}
       <div style={{ marginTop: 40 }}>

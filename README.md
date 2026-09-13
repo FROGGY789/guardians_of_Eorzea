@@ -9,7 +9,7 @@
 
 ## ✨ 주요 기능
 
-- **로그인 / 회원 시스템** — Supabase 인증. 이메일·비밀번호로 가입하고, **부대장 승인 후** 입장합니다.
+- **로그인 / 회원 시스템** — Supabase 인증. **캐릭터 닉네임 · 비밀번호 · 부대 시크릿코드**로 가입하고, **부대장 승인 후** 입장합니다. (이메일 입력 없음 — 닉네임으로 로그인)
 - **권한 관리 (부대장 전용)** — 가입 승인/거절, 부대원 계급 지정, **글쓰기 권한** 부여/회수, 내보내기. (`부대 관리` 탭)
 - **갤러리 = 게시글 형식** — 대표 사진 한 장이 폴라로이드로 뜨고, **누르면 그 게시글의 다른 사진들**도 볼 수 있습니다. 게시글마다 사진을 여러 장 담고, 나중에 더 추가할 수 있어요.
 - **대문·홈 폴라로이드는 항상 최신 사진** — 로그인 화면과 갤러리 홈의 대표 폴라로이드는 가장 최근에 올라온 갤러리 사진을 자동으로 보여줍니다.
@@ -23,6 +23,7 @@
 | 폴라로이드를 항상 최신 갤러리 사진으로 | ✅ 로그인·홈 대표 폴라로이드가 최신 사진 자동 표시 |
 | 갤러리를 게시글 형식(대표 사진 → 클릭 시 다른 사진들) | ✅ `gallery_posts` + `gallery_photos` 구조로 구현 |
 | 부대장 대표 계정 + 가입 승인/글쓰기 권한 관리 | ✅ `부대 관리` 탭에서 승인·권한 관리 |
+| 가입 = 닉네임 + 비밀번호 + 부대 시크릿코드 | ✅ 시크릿코드가 맞아야 가입, 부대장이 `부대 관리`에서 코드 변경 |
 
 ---
 
@@ -34,57 +35,45 @@
 
 ---
 
-## 🚀 설치 및 실행
+> Supabase 프로젝트 연결 정보(URL·anon key)는 이미 코드에 들어 있어 별도 설정 없이 동작합니다.
+> (anon key는 브라우저에 공개되도록 설계된 공개 키이며, 실제 보안은 DB의 Row Level Security로 지켜집니다.)
+> 다른 Supabase로 바꾸려면 `.env` 에 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 를 넣으면 덮어씁니다.
 
-### 1. 의존성 설치
+### 1. Supabase에 스키마 적용 (최초 1회, 필수)
+1. Supabase 대시보드 → 좌측 **SQL Editor** → **New query**
+2. [`supabase/schema.sql`](supabase/schema.sql) 내용을 **전부** 붙여넣고 **Run**
+   - 테이블 · 권한(RLS) · 트리거 · 이미지 업로드용 Storage 버킷(`gallery`) · 가입 시크릿코드가 한 번에 만들어집니다.
+
+### 2. ⚠️ 이메일 확인(Confirm email) 끄기 (필수)
+**Authentication → Sign In / Providers → Email → "Confirm email" 을 OFF** 로 바꿔 저장하세요.
+이 사이트는 이메일 대신 **닉네임으로 로그인**하도록 내부적으로 가상 이메일을 사용하므로, 확인 메일 기능이 켜져 있으면 로그인이 되지 않습니다.
+
+### 3. 실행
 ```bash
 npm install
-```
+npm run dev        # http://localhost:5173
 
-### 2. Supabase 프로젝트 만들기
-1. [supabase.com](https://supabase.com) 에서 무료 프로젝트를 생성합니다.
-2. 좌측 메뉴 **SQL Editor** → **New query** 에 [`supabase/schema.sql`](supabase/schema.sql) 파일 내용을 **전부** 붙여넣고 **Run**.
-   - 테이블, 권한(RLS), 트리거, 이미지 업로드용 Storage 버킷(`gallery`)이 한 번에 만들어집니다.
-3. **Authentication → Providers → Email** 에서 이메일 로그인이 켜져 있는지 확인합니다.
-   - 테스트를 쉽게 하려면 **Authentication → Sign In / Providers → Email → "Confirm email"** 을 **꺼두면** 가입 즉시 로그인됩니다. (켜두면 이메일 인증 메일이 발송됩니다.)
-
-### 3. 환경변수 설정
-`.env.example` 을 복사해 `.env` 파일을 만들고 값을 채웁니다.
-Supabase **Settings → API** 에서 값을 복사하세요.
-```bash
-cp .env.example .env
-```
-```
-VITE_SUPABASE_URL=https://xxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGci...   # anon public key
-```
-
-### 4. 개발 서버 실행
-```bash
-npm run dev
-```
-`http://localhost:5173` 접속.
-
-### 5. 프로덕션 빌드
-```bash
-npm run build      # dist/ 생성
+npm run build      # 배포용 dist/ 생성
 npm run preview    # 빌드 결과 미리보기
 ```
 
 ---
 
-## 👑 부대장(관리자) 계정 만들기
+## 👑 부대장(관리자) 계정 만들기 & 시크릿코드
 
-가장 간단한 방법: **부대장이 사이트에서 제일 먼저 가입**하면 됩니다.
-`schema.sql` 에는 *첫 번째로 가입한 사용자를 자동으로 부대장(admin)으로 지정*하는 트리거가 들어 있습니다.
+1. **부대장이 사이트에서 제일 먼저 가입**하세요. 가입 화면에서:
+   - 캐릭터 닉네임 / 원하는 비밀번호 / **부대 시크릿코드** 입력
+   - 초기 시크릿코드는 **`LUX-2026`** 입니다.
+2. `schema.sql` 의 트리거가 *가장 먼저 가입한 사람을 자동으로 부대장(admin)* 으로 지정합니다. → 바로 입장됩니다.
+3. 입장 후 **`부대 관리` 탭** 에서:
+   - **시크릿코드를 원하는 값으로 변경**하고 부대원들에게만 알려주세요.
+   - 이후 가입자는 `승인 대기` 상태가 되며, 여기서 **승인** 해야 입장할 수 있습니다.
 
-> 그다음부터 가입하는 사람들은 모두 `승인 대기` 상태가 되고, 부대장이 `부대 관리` 탭에서 승인해야 입장할 수 있습니다.
-
-이미 여러 명이 가입한 뒤 특정 계정을 부대장으로 바꾸려면 SQL Editor에서:
-```sql
-update public.profiles set role = 'admin', can_write = true
-where id = (select id from auth.users where email = 'you@example.com');
-```
+> 이미 여러 명이 가입한 뒤 특정 계정을 부대장으로 바꾸려면 SQL Editor에서 (닉네임은 `character_name` 컬럼):
+> ```sql
+> update public.profiles set role = 'admin', can_write = true
+> where lower(character_name) = lower('닉네임');
+> ```
 
 ---
 
@@ -108,10 +97,10 @@ where id = (select id from auth.users where email = 'you@example.com');
 
 예) Vercel:
 1. 이 저장소를 Vercel에 연결
-2. Environment Variables 에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 추가
-3. Build command `npm run build`, Output directory `dist`
+2. Build command `npm run build`, Output directory `dist`
+   - Supabase 연결 정보는 코드에 포함되어 있어 별도 환경변수 설정이 필요 없습니다. (다른 프로젝트로 바꾸려면 Environment Variables 에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 추가)
 
-> Supabase **Authentication → URL Configuration** 의 Site URL / Redirect URLs 에 배포 도메인을 추가하세요.
+> 배포 후에도 **Authentication → "Confirm email" 은 반드시 OFF** 여야 로그인이 됩니다.
 
 ---
 

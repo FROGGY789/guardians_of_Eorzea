@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase, nicknameToEmail } from '../lib/supabase';
 import type { Profile } from '../lib/types';
 
 interface AuthState {
@@ -17,12 +17,11 @@ interface AuthState {
   isAdmin: boolean;
   isApproved: boolean;
   canWrite: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (nickname: string, password: string) => Promise<void>;
   signUp: (args: {
-    email: string;
+    nickname: string;
     password: string;
-    characterName: string;
-    job?: string;
+    secretCode: string;
   }) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -83,21 +82,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isApproved: profile?.role === 'admin' || profile?.role === 'member',
       canWrite:
         profile?.role === 'admin' || (profile?.role === 'member' && profile?.can_write === true),
-      async signIn(email, password) {
+      async signIn(nickname, password) {
+        const email = await nicknameToEmail(nickname);
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       },
-      async signUp({ email, password, characterName, job }) {
+      async signUp({ nickname, password, secretCode }) {
+        const name = nickname.trim();
+        if (!name) throw new Error('NICKNAME_REQUIRED');
+
+        // Server-side gate: check the FC secret code and nickname availability
+        // before creating the account (also enforced again by a DB trigger).
+        const { data: check, error: rpcError } = await supabase.rpc('precheck_signup', {
+          p_nickname: name,
+          p_code: secretCode,
+        });
+        if (rpcError) throw rpcError;
+        if (check === 'bad_code') throw new Error('BAD_SECRET_CODE');
+        if (check === 'nick_taken') throw new Error('NICKNAME_TAKEN');
+
+        const email = await nicknameToEmail(name);
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            data: { character_name: characterName, job: job || null },
-          },
+          options: { data: { character_name: name, secret_code: secretCode } },
         });
         if (error) throw error;
-        // A DB trigger creates the profile row from the auth metadata above.
-        // If email confirmation is off, the session exists immediately.
+        // A DB trigger creates the profile row from the metadata above.
+        // With email confirmation off, the session exists immediately.
         if (data.user && data.session) await loadProfile(data.user.id);
       },
       async signOut() {

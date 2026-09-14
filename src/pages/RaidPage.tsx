@@ -85,7 +85,7 @@ export function RaidPage() {
       )}
 
       {showForm && <RaidForm onClose={() => setShowForm(false)} onDone={load} authorId={profile!.id} />}
-      <style>{`@media (max-width: 760px){ .lux-raid-row{ grid-template-columns: 90px 1fr !important; } }`}</style>
+      <style>{`@media (max-width: 760px){ .lux-raid-row{ grid-template-columns: 1fr !important; } }`}</style>
     </Page>
   );
 }

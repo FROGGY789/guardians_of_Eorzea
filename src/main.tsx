@@ -14,3 +14,13 @@ createRoot(document.getElementById('root')!).render(
     </ThemeProvider>
   </StrictMode>,
 );
+
+// Register the service worker so the site is installable ("홈 화면에 추가").
+// Only in production builds served over http(s); ignored during `vite dev`.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('서비스워커 등록 실패:', err);
+    });
+  });
+}
